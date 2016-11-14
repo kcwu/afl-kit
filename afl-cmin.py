@@ -23,6 +23,7 @@ import shutil
 import multiprocessing
 import array
 import collections
+import glob
 
 try:
     from tqdm import tqdm
@@ -36,7 +37,7 @@ parser = argparse.ArgumentParser()
 
 cpu_count = multiprocessing.cpu_count()
 group = parser.add_argument_group('Required parameters')
-group.add_argument('-i', dest='input', metavar='dir', required=True,
+group.add_argument('-i', dest='input', action='append', metavar='dir', required=True,
         help='input directory with the starting corpus')
 group.add_argument('-o', dest='output', metavar='dir', required=True,
         help='output directory for minimized files')
@@ -104,12 +105,15 @@ def init():
             logger.error("binary '%s' doesn't appear to be instrumented", args.exe)
             sys.exit(1)
 
-    if not os.path.isdir(args.input):
-        logger.error('directory "%s" not found', args.input)
-        sys.exit(1)
+    expanded = []
+    for s in args.input:
+        expanded += glob.glob(s)
+    args.input = expanded
 
-    if os.path.isdir(os.path.join(args.input, 'queue')):
-        args.input = os.path.join(args.input, 'queue')
+    for dn in args.input:
+        if not os.path.isdir(dn):
+            logger.error('directory "%s" not found', dn)
+            sys.exit(1)
 
     trace_dir = os.path.join(args.output, '.traces')
     shutil.rmtree(trace_dir, ignore_errors=True)
@@ -123,7 +127,7 @@ def init():
     os.makedirs(trace_dir)
 
 
-def afl_showmap(fn, first=False):
+def afl_showmap(input_path, first=False):
     cmd = [
             'afl-showmap',
             '-m', str(args.memory_limit),
@@ -137,7 +141,6 @@ def afl_showmap(fn, first=False):
         cmd += ['-e']
     cmd += ['--', args.exe] + args.args
 
-    input_path = os.path.join(args.input, fn)
     if args.stdin_file:
         input_from_file = True
         shutil.copy(input_path, args.stdin_file)
@@ -176,8 +179,8 @@ class Worker(multiprocessing.Process):
             if job is None:
                 break
 
-            idx, fn = job
-            r = afl_showmap(fn)
+            idx, input_path = job
+            r = afl_showmap(input_path)
             counter.update(r)
 
             used = False
@@ -186,7 +189,7 @@ class Worker(multiprocessing.Process):
                     m[t] = idx
                     used = True
             if used:
-                trace_fn = os.path.join(args.output, '.traces', fn)
+                trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
                 with open(trace_fn, 'wb') as f:
                     f.write(r.tostring())
 
@@ -200,11 +203,12 @@ class Worker(multiprocessing.Process):
 def main():
     init()
 
-    files = sorted((fn for fn in os.listdir(args.input) if not fn.startswith('.')),
-            key=lambda fn: os.path.getsize(os.path.join(args.input, fn)))
+    files = (os.path.join(dn, fn) for dn in args.input for fn in os.listdir(dn) if not fn.startswith('.'))
+    files = sorted(files, key=lambda input_path: os.path.getsize(input_path))
     if len(files) == 0:
         logger.error('no inputs in the target directory - nothing to be done')
         sys.exit(1)
+    logger.info('Found %d input files in %d directories', len(files), len(args.input))
 
     logger.info('Testing the target binary')
     result = afl_showmap(files[0], first=True)
@@ -256,15 +260,15 @@ def main():
         if t in already_have:
             continue
 
-        fn = files[best_idxes[t]]
-        input_path = os.path.join(args.input, fn)
-        output_path = os.path.join(args.output, fn)
+        idx = best_idxes[t]
+        input_path = files[idx]
+        output_path = os.path.join(args.output, '%d' % idx)
         try:
             os.link(input_path, output_path)
         except OSError:
             shutil.copy(input_path, output_path)
 
-        trace_fn = os.path.join(args.output, '.traces', fn)
+        trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
         result = array.array('l', file(trace_fn).read())
         for t in result:
             already_have.add(t)
