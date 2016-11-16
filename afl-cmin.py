@@ -24,6 +24,8 @@ import multiprocessing
 import array
 import collections
 import glob
+import hashlib
+import base64
 
 try:
     from tqdm import tqdm
@@ -63,6 +65,8 @@ group.add_argument('-e', dest='edge_mode', action='store_true', default=False,
 group = parser.add_argument_group('Misc')
 group.add_argument('-w', dest='workers', type=int, default=cpu_count/2,
         help='number of concurrent worker (%d)' % (cpu_count / 2))
+group.add_argument('--as_queue', action='store_true',
+        help='output file name like "id:000000,hash:value"')
 group.add_argument('--debug', action='store_true')
 
 parser.add_argument('exe', metavar='/path/to/target_app')
@@ -199,16 +203,36 @@ class Worker(multiprocessing.Process):
 
         self.r_out.put((m, counter))
 
+def hash_file(path):
+    m = hashlib.sha1()
+    m.update(file(path).read())
+    return m.digest()
+
+def dedup(files):
+    pool = multiprocessing.Pool(args.workers)
+    seen_hash = set()
+    result = []
+    hashmap = {}
+    for i, h in enumerate(pool.map(hash_file, files)):
+        if h in seen_hash:
+            continue
+        seen_hash.add(h)
+        result.append(files[i])
+        hashmap[files[i]] = h
+    return result, hashmap
 
 def main():
     init()
 
-    files = (os.path.join(dn, fn) for dn in args.input for fn in os.listdir(dn) if not fn.startswith('.'))
-    files = sorted(files, key=lambda input_path: os.path.getsize(input_path))
+    files = [os.path.join(dn, fn) for dn in args.input for fn in os.listdir(dn) if not fn.startswith('.')]
     if len(files) == 0:
         logger.error('no inputs in the target directory - nothing to be done')
         sys.exit(1)
     logger.info('Found %d input files in %d directories', len(files), len(args.input))
+
+    files, hashmap = dedup(files)
+    files = sorted(files, key=os.path.getsize)
+    logger.info('Remain %d files after dedup', len(files))
 
     logger.info('Testing the target binary')
     result = afl_showmap(files[0], first=True)
@@ -262,7 +286,10 @@ def main():
 
         idx = best_idxes[t]
         input_path = files[idx]
-        output_path = os.path.join(args.output, '%d' % idx)
+        fn = base64.b16encode(hashmap[input_path]).lower()
+        if args.as_queue:
+            fn = 'id:%06d,hash:%s' % (count, fn)
+        output_path = os.path.join(args.output, fn)
         try:
             os.link(input_path, output_path)
         except OSError:
