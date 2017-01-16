@@ -12,7 +12,7 @@ Reimplement afl-cmin in python. Use less memory, less disk space, and faster.
 
 So, you can use afl-cmin.py in workflow like this
 
-1. Run many instances of afl-fuzz and have mutiple queues in `sync_dir.1` directory
+1. Run many instances of afl-fuzz and have multiple queues in `sync_dir.1` directory
 2. `afl-cmin.py -i 'sync_dir.1/*/queue' -o sync_dir.2/prev/queue --as_queue ...`
 3. Run another batch of afl-fuzz in `sync_dir.2`. They will automatically sync queue from `sync_dir.2/prev/queue`.
 
