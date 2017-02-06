@@ -144,6 +144,7 @@ def afl_showmap(input_path, first=False):
         cmd += ['-e']
     cmd += ['--', args.exe] + args.args
 
+    input_from_file = False
     if args.stdin_file:
         input_from_file = True
         shutil.copy(input_path, args.stdin_file)
