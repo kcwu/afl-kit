@@ -67,6 +67,7 @@ group.add_argument('-w', dest='workers', type=int, default=cpu_count/2,
 group.add_argument('--as_queue', action='store_true',
         help='output file name like "id:000000,hash:value"')
 group.add_argument('--debug', action='store_true')
+group.add_argument('--no-dedup', action='store_true')
 
 parser.add_argument('exe', metavar='/path/to/target_app')
 parser.add_argument('args', nargs='*')
@@ -230,9 +231,14 @@ def main():
         sys.exit(1)
     logger.info('Found %d input files in %d directories', len(files), len(args.input))
 
-    files, hashmap = dedup(files)
+    if not args.no_dedup:
+        files, hashmap = dedup(files)
+        logger.info('Remain %d files after dedup', len(files))
+    else:
+        logger.info('Skipping file deduplication.')
+    
+    logger.info('Sorting files.')
     files = sorted(files, key=os.path.getsize)
-    logger.info('Remain %d files after dedup', len(files))
 
     logger.info('Testing the target binary')
     result = afl_showmap(files[0], first=True)
@@ -286,9 +292,13 @@ def main():
 
         idx = best_idxes[t]
         input_path = files[idx]
-        fn = base64.b16encode(hashmap[input_path]).lower()
+        fn = (base64.b16encode(hashmap[input_path]).lower()
+              if not args.no_dedup
+              else os.path.basename(input_path))
         if args.as_queue:
-            fn = 'id:%06d,hash:%s' % (count, fn)
+            fn = ('id:%06d,hash:%s' % (count, fn)
+                  if not args.no_dedup
+                  else 'id:%06d,orig:%s' % (count, fn))
         output_path = os.path.join(args.output, fn)
         try:
             os.link(input_path, output_path)
