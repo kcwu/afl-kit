@@ -56,6 +56,8 @@ group.add_argument('-Q', dest='qemu_mode', action='store_true', default=False,
         help='use binary-only instrumentation (QEMU mode)')
 
 group = parser.add_argument_group('Minimization settings')
+group.add_argument('-c', dest='crash_dir', metavar='dir', default=None,
+        help='move crashes to a separate dir, always deduplicated')
 group.add_argument('-C', dest='crash_only', action='store_true',
         help='keep crashing inputs, reject everything else')
 group.add_argument('-e', dest='edge_mode', action='store_true', default=False,
@@ -66,8 +68,9 @@ group.add_argument('-w', dest='workers', type=int, default=cpu_count/2,
         help='number of concurrent worker (%d)' % (cpu_count / 2))
 group.add_argument('--as_queue', action='store_true',
         help='output file name like "id:000000,hash:value"')
+group.add_argument('--no-dedup', action='store_true',
+        help='skip deduplication step for corpus files')
 group.add_argument('--debug', action='store_true')
-group.add_argument('--no-dedup', action='store_true')
 
 parser.add_argument('exe', metavar='/path/to/target_app')
 parser.add_argument('args', nargs='*')
@@ -126,6 +129,8 @@ def init():
     if os.path.exists(args.output):
         logger.error('directory "%s" exists and is not empty - delete it first', args.output)
         sys.exit(1)
+    if args.crash_dir and not os.path.exists(args.crash_dir):
+        os.makedirs(args.crash_dir)
     os.makedirs(trace_dir)
 
 
@@ -136,6 +141,7 @@ def afl_showmap(input_path, first=False):
             '-t', str(args.time_limit),
             '-o', '-',
             '-Z']
+    env = os.environ
 
     if args.qemu_mode:
         cmd += ['-Q']
@@ -167,7 +173,10 @@ def afl_showmap(input_path, first=False):
     #out = p.communicate()[0]
 
     a = array.array('l', map(int, out.split()))
-    return a
+
+    # return code of afl-showmap is child_crashed * 2 + child_timed_out where
+    # child_crashed and child_timed_out are either 0 or 1
+    return (a, p.returncode in [2, 3])
 
 class Worker(multiprocessing.Process):
     def __init__(self, q_in, p_out, r_out):
@@ -179,6 +188,7 @@ class Worker(multiprocessing.Process):
     def run(self):
         m = array.array('l', [0xffffff] * 865536)
         counter = collections.Counter()
+        crashes = []
         while True:
             # job is ordered by size, small to large
             job = self.q_in.get()
@@ -186,14 +196,19 @@ class Worker(multiprocessing.Process):
                 break
 
             idx, input_path = job
-            r = afl_showmap(input_path)
+            r, crash = afl_showmap(input_path)
             counter.update(r)
 
             used = False
-            for t in r:
-                if idx < m[t]:
-                    m[t] = idx
-                    used = True
+
+            if not crash:
+                for t in r:
+                    if idx < m[t]:
+                        m[t] = idx
+                        used = True
+            else:
+                crashes.append(idx)
+
             if used:
                 trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
                 with open(trace_fn, 'wb') as f:
@@ -203,7 +218,7 @@ class Worker(multiprocessing.Process):
             else:
                 self.p_out.put(None)
 
-        self.r_out.put((m, counter))
+        self.r_out.put((m, counter, crashes))
 
 def hash_file(path):
     m = hashlib.sha1()
@@ -237,14 +252,14 @@ def main():
         logger.info('Remain %d files after dedup', len(files))
     else:
         logger.info('Skipping file deduplication.')
-    
+
     logger.info('Sorting files.')
     files = sorted(files, key=os.path.getsize)
 
     logger.info('Testing the target binary')
-    result = afl_showmap(files[0], first=True)
-    if result:
-        logger.info('ok, %d tuples recorded', len(result))
+    tuples, _ = afl_showmap(files[0], first=True)
+    if tuples:
+        logger.info('ok, %d tuples recorded', len(tuples))
     else:
         logger.error('no instrumentation output detected')
         sys.exit(1)
@@ -273,15 +288,17 @@ def main():
             effective += 1
 
     ms = []
+    crashes = []
     counter = collections.Counter()
     for _ in range(args.workers):
-        m, c = result_queue.get()
+        m, c, crs = result_queue.get()
         ms.append(m)
         counter.update(c)
+        crashes.extend(crs)
     best_idxes = map(min, zip(*ms))
 
-    logger.info('Found %d unique tuples across %d files (%d effective)',
-            len(counter), len(files), effective)
+    logger.info('Found %d unique tuples across %d files (%d effective, %d crashes)',
+            len(counter), len(files), effective, len(crashes))
     all_unique = counter.most_common()
 
     logger.info('Processing candidates and writing output')
@@ -311,6 +328,22 @@ def main():
         for t in result:
             already_have.add(t)
         count += 1
+
+    if args.crash_dir:
+        logger.info('Saving crashes to %s', args.crash_dir)
+        crash_files = [files[c] for c in crashes]
+        crash_files, hashmap = dedup(crash_files)
+        for crash_path in crash_files:
+            fn = base64.b16encode(hashmap[crash_path]).lower()
+            output_path = os.path.join(args.crash_dir, fn)
+            try:
+                os.link(crash_path, output_path)
+            except OSError:
+                try:
+                    shutil.copy(crash_path, output_path)
+                except shutil.Error:
+                    # files are the same; do nothing since we already have it
+                    pass
 
     if count == 1:
         logger.warn('all test cases had the same traces, check syntax!')
