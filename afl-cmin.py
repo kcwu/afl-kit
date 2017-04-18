@@ -81,8 +81,6 @@ def init():
     logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
     logger = logging.getLogger(__name__)
 
-    os.environ['AFL_CMIN_ALLOW_ANY'] = '1'
-
     if args.stdin_file and args.workers > 1:
         logger.error('-f is only supported with one worker (-w 1)')
         sys.exit(1)
@@ -157,10 +155,13 @@ def afl_showmap(input_path, first=False):
 
     if first:
         logger.debug('run command line: %s', subprocess.list2cmdline(cmd))
+        env = env.copy()
+        env['AFL_CMIN_ALLOW_ANY'] = '1'
+
     if input_from_file:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=1048576)
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, env=env, bufsize=1048576)
     else:
-        p = subprocess.Popen(cmd, stdin=file(input_path), stdout=subprocess.PIPE, bufsize=1048576)
+        p = subprocess.Popen(cmd, stdin=file(input_path), stdout=subprocess.PIPE, env=env, bufsize=1048576)
     out = p.stdout.read()
     p.wait()
     #out = p.communicate()[0]
