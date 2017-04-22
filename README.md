@@ -7,6 +7,7 @@ Reimplement afl-cmin in python. Use less memory, less disk space, and faster.
  - Support the same command line flags as original afl-cmin.
  - dedup by hash of file content in the beginning.
  - `-i DIR` can be specified multiple times. Also support globbing.
+ - `-c DIR` to copy detected crashes (deduplicated by hash) into `DIR`.
  - `-w WORKERS` to specify number of workers.
  - `--as_queue` output filename like `id:000001,hash:value`.
 
