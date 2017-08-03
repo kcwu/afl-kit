@@ -31,6 +31,32 @@ Detail of this table
 - the input are 79k unique files, total 472mb. the output are 5k files, total 39mb.
 - `temp disk` is the size of `.traces` folder after run with `AFL_KEEP_TRACES=1`.
 
+## tmin.py
+Similar to afl-tmin, but minimize by different conditions.
+
+### Features/enhancement
+ - Support similar command line flags as afl-tmin.
+ - Use similar minimization heuristic as afl-tmin.
+ - Instead of classifying input by coverage, tmin.py classifies input by
+   program output and terminal conditions. Supportted conditions:
+     * `--stdout`: stdout contains given string
+     * `--stderr`: stderr contains given string
+     * `--crash`: program terminated by any signal
+     * `--returncode`: program exits with given returncode
+     * `--signal`: program terminated by given signal
+     * `--timeout`: program terminated due to timeout
+
+### Examples
+ - Minimize input while makes sure [exploitable] still output `EXPLOITABLE`.
+
+    `tmin.py -i file.in -o file.out -m none --stdout "'EXPLOITABLE'" -- ~/src/exploitable/triage.py './w3m -T text/html -dump @@'`
+
+ - Minimize input while makes sure the program is still killed by SIGABRT (i.e. assert() fail)
+
+    `tmin.py -i file.in -o file.out --signal 6 -- /path/to/program @@`
+
+[exploitable]: https://github.com/jfoote/exploitable
+
 ## License
 Apache License 2.0. Copyright 2016 Google Inc.
 
