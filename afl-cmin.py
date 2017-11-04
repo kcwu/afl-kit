@@ -236,7 +236,7 @@ def main():
         logger.info('Remain %d files after dedup', len(files))
     else:
         logger.info('Skipping file deduplication.')
-    
+
     logger.info('Sorting files.')
     files = sorted(files, key=os.path.getsize)
 
