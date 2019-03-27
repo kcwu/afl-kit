@@ -175,7 +175,9 @@ def afl_showmap(input_path, first=False):
 
     # return code of afl-showmap is child_crashed * 2 + child_timed_out where
     # child_crashed and child_timed_out are either 0 or 1
-    return (a, p.returncode in [2, 3])
+    crashed = p.returncode in [2, 3]
+
+    return a, crashed
 
 class Worker(multiprocessing.Process):
     def __init__(self, q_in, p_out, r_out):
