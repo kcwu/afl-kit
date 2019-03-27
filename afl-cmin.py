@@ -57,7 +57,7 @@ group.add_argument('-Q', dest='qemu_mode', action='store_true', default=False,
 
 group = parser.add_argument_group('Minimization settings')
 group.add_argument('--crash-dir', dest='crash_dir', metavar='dir', default=None,
-        help='move crashes to a separate dir, always deduplicated')
+        help="move crashes to a separate dir, always deduplicated")
 group.add_argument('-C', dest='crash_only', action='store_true',
         help='keep crashing inputs, reject everything else')
 group.add_argument('-e', dest='edge_mode', action='store_true', default=False,
@@ -202,13 +202,18 @@ class Worker(multiprocessing.Process):
 
             used = False
 
-            if not crash:
+            if crash:
+                crashes.append(idx)
+
+            # If we aren't saving crashes to a separate dir, handle them
+            # the same as other inputs. However, unless AFL_CMIN_ALLOW_ANY=1,
+            # afl_showmap will not return any coverage for crashes so they will
+            # never be retained.
+            if not crash or not args.crash_dir:
                 for t in r:
                     if idx < m[t]:
                         m[t] = idx
                         used = True
-            else:
-                crashes.append(idx)
 
             if used:
                 trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
@@ -298,7 +303,11 @@ def main():
         crashes.extend(crs)
     best_idxes = map(min, zip(*ms))
 
-    logger.info('Found %d unique tuples across %d files (%d effective, %d crashes)',
+    if not args.crash_dir:
+        logger.info('Found %d unique tuples across %d files (%d effective)',
+            len(counter), len(files), effective)
+    else:
+        logger.info('Found %d unique tuples across %d files (%d effective, %d crashes)',
             len(counter), len(files), effective, len(crashes))
     all_unique = counter.most_common()
 
