@@ -141,7 +141,7 @@ def afl_showmap(input_path, first=False):
             '-t', str(args.time_limit),
             '-o', '-',
             '-Z']
-    env = os.environ
+    env = os.environ.copy()
 
     if args.qemu_mode:
         cmd += ['-Q']
@@ -161,7 +161,6 @@ def afl_showmap(input_path, first=False):
 
     if first:
         logger.debug('run command line: %s', subprocess.list2cmdline(cmd))
-        env = env.copy()
         env['AFL_CMIN_ALLOW_ANY'] = '1'
 
     if input_from_file:
