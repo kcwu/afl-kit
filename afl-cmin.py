@@ -348,7 +348,9 @@ def main():
                 try:
                     shutil.copy(crash_path, output_path)
                 except shutil.Error:
-                    # files are the same; do nothing since we already have it
+                    # This error happens when src and dest are hardlinks of the
+                    # same file. We have nothing to do in this case, but handle
+                    # it gracefully.
                     pass
 
     if count == 1:
