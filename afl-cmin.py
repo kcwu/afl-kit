@@ -56,7 +56,7 @@ group.add_argument('-Q', dest='qemu_mode', action='store_true', default=False,
         help='use binary-only instrumentation (QEMU mode)')
 
 group = parser.add_argument_group('Minimization settings')
-group.add_argument('-c', dest='crash_dir', metavar='dir', default=None,
+group.add_argument('--crash-dir', dest='crash_dir', metavar='dir', default=None,
         help='move crashes to a separate dir, always deduplicated')
 group.add_argument('-C', dest='crash_only', action='store_true',
         help='keep crashing inputs, reject everything else')
