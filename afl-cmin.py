@@ -332,7 +332,12 @@ def main():
     if args.crash_dir:
         logger.info('Saving crashes to %s', args.crash_dir)
         crash_files = [files[c] for c in crashes]
-        crash_files, hashmap = dedup(crash_files)
+
+        if args.no_dedup:
+            # Unless we deduped previously, we have to dedup the crash files
+            # now.
+            crash_files, hashmap = dedup(crash_files)
+
         for crash_path in crash_files:
             fn = base64.b16encode(hashmap[crash_path]).lower()
             output_path = os.path.join(args.crash_dir, fn)
