@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2017 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -114,7 +114,7 @@ def create_argument_parser():
         '--debug',
         action='store_true',
         help='Show detail information for debugging %(prog)s')
-    parser.add_argument('--verbose', '-v', action='count')
+    parser.add_argument('--verbose', '-v', action='count', default=0)
     parser.add_argument('--no-aslr', action='store_true', help='Disable ASLR')
     parser.add_argument('--dryrun', action='store_true')
 
@@ -239,7 +239,7 @@ def run_target_once(opts, data):
     if g_execs == 0 and stderr:
         logger.info('stderr begin (last 8kb, 100 lines) =====')
         stderr = stderr[-8192:]
-        stderr = '\n'.join(stderr.splitlines()[-100:])
+        stderr = b'\n'.join(stderr.splitlines()[-100:])
         logger.info('%s', stderr)
         logger.info('stderr end =====')
     if g_execs == 0:
@@ -259,10 +259,10 @@ def run_target_once(opts, data):
         if p.returncode < 0:
             opts.signal = -p.returncode
             logger.info('AUTO: signal=%s', opts.signal)
-        m = re.search(r'ERROR: AddressSanitizer: (.+) on', stderr)
+        m = re.search(br'ERROR: AddressSanitizer: (.+) on', stderr)
         if m:
             opts.stderr = [m.group()]
-            m = re.search(r'(READ|WRITE) of size ', stderr)
+            m = re.search(br'(READ|WRITE) of size ', stderr)
             if m:
                 opts.stderr.append(m.group())
             logger.info('AUTO: stderr=%r', opts.stderr)
@@ -371,7 +371,7 @@ def step_block_deletion(opts, data):
             else:
                 del_pos += del_len
 
-        del_len /= 2
+        del_len //= 2
 
     return data
 
@@ -381,14 +381,14 @@ def step_alphabet_minimization(opts, data, dummy_char):
     alpha_del1 = 0
     alpha_map = [0] * 256
     for c in data:
-        alpha_map[ord(c)] += 1
+        alpha_map[c] += 1
     alpha_size = 256 - alpha_map.count(0)
 
     for i in range(256):
         if i == ord(dummy_char) or alpha_map[i] == 0:
             continue
 
-        tmp_buf = data.replace(chr(i), dummy_char)
+        tmp_buf = data.replace(bytes([i]), dummy_char)
 
         if run_target(opts, tmp_buf):
             data = tmp_buf
@@ -400,7 +400,7 @@ def step_alphabet_minimization(opts, data, dummy_char):
 def step_character_minimization(opts, data, dummy_char):
     """replace one character to dummy char"""
     for i in range(len(data)):
-        if data[i] == dummy_char:
+        if data[i] == ord(dummy_char):
             continue
         tmp_buf = data[:i] + dummy_char + data[i + 1:]
 
@@ -415,7 +415,8 @@ def minimize(opts):
     if opts.input == '-':
         data = orig_data = sys.stdin.read()
     else:
-        data = orig_data = file(opts.input).read()
+        with open(opts.input, 'rb') as f:
+          data = orig_data = f.read()
     logger.info('initial len=%d', len(data))
 
     logger.info('initial dry run')
@@ -425,7 +426,7 @@ def minimize(opts):
 
     alpha_d_total = 0
 
-    dummy_char = '0'
+    dummy_char = b'0'
 
     logger.info('start normalization')
     data, alpha_del0 = step_normalization(opts, data, dummy_char)
@@ -449,7 +450,7 @@ def minimize(opts):
         assert data
 
         logger.info('#%d, so far len=%d', pass_num, len(data))
-        print repr(data)
+        print(repr(data))
         pass_num += 1
 
     logger.info('size: %d -> %d', len(orig_data), len(data))
@@ -478,8 +479,8 @@ def main():
     if opts.dryrun:
         return
 
-    print repr(data)
-    with file(opts.output, 'wb') as f:
+    print(repr(data))
+    with open(opts.output, 'wb') as f:
         f.write(data)
 
 
