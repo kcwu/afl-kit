@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2016 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@ import base64
 try:
     from tqdm import tqdm
 except ImportError:
-    print 'Hint: install python module "tqdm" to show progress bar'
+    print('Hint: install python module "tqdm" to show progress bar')
     def tqdm(data, *args, **argd):
         for x in data:
             yield x
@@ -64,8 +64,8 @@ group.add_argument('-e', dest='edge_mode', action='store_true', default=False,
         help='solve for edge coverage only, ignore hit counts')
 
 group = parser.add_argument_group('Misc')
-group.add_argument('-w', dest='workers', type=int, default=cpu_count/2,
-        help='number of concurrent worker (%d)' % (cpu_count / 2))
+group.add_argument('-w', dest='workers', type=int, default=cpu_count//2,
+        help='number of concurrent worker (%d)' % (cpu_count // 2))
 group.add_argument('--as_queue', action='store_true',
         help='output file name like "id:000000,hash:value"')
 group.add_argument('--no-dedup', action='store_true',
@@ -106,14 +106,9 @@ def init():
         sys.exit(1)
 
     if not os.environ.get('AFL_SKIP_BIN_CHECK') and not args.qemu_mode:
-        if '__AFL_SHM_ID' not in file(args.exe).read():
+        if b'__AFL_SHM_ID' not in open(args.exe, 'rb').read():
             logger.error("binary '%s' doesn't appear to be instrumented", args.exe)
             sys.exit(1)
-
-    expanded = []
-    for s in args.input:
-        expanded += glob.glob(s)
-    args.input = expanded
 
     for dn in args.input:
         if not os.path.isdir(dn):
@@ -166,12 +161,18 @@ def afl_showmap(input_path, first=False):
     if input_from_file:
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, env=env, bufsize=1048576)
     else:
-        p = subprocess.Popen(cmd, stdin=file(input_path), stdout=subprocess.PIPE, env=env, bufsize=1048576)
+        p = subprocess.Popen(cmd, stdin=open(input_path, 'rb'), stdout=subprocess.PIPE, env=env, bufsize=1048576)
     out = p.stdout.read()
     p.wait()
     #out = p.communicate()[0]
 
-    a = array.array('l', map(int, out.split()))
+    values = []
+    for line in out.split():
+      # we get result from stdout and afl-showmap may generate warnings to stdout as well.
+      if not line.isdigit():
+        continue
+      values.append(int(line))
+    a = array.array('l', values)
 
     # return code of afl-showmap is child_crashed * 2 + child_timed_out where
     # child_crashed and child_timed_out are either 0 or 1
@@ -187,7 +188,9 @@ class Worker(multiprocessing.Process):
         self.r_out = r_out
 
     def run(self):
-        m = array.array('l', [0xffffff] * 865536)
+        map_size = int(os.environ.get('AFL_MAP_SIZE', '65536'))
+        max_value = int('8' + str(map_size))
+        m = array.array('l', [0xffffff] * max_value)
         counter = collections.Counter()
         crashes = []
         while True:
@@ -218,7 +221,7 @@ class Worker(multiprocessing.Process):
             if used:
                 trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
                 with open(trace_fn, 'wb') as f:
-                    f.write(r.tostring())
+                    f.write(r.tobytes())
 
                 self.p_out.put(idx)
             else:
@@ -228,26 +231,46 @@ class Worker(multiprocessing.Process):
 
 def hash_file(path):
     m = hashlib.sha1()
-    m.update(file(path).read())
+    with open(path, 'rb') as f:
+      m.update(f.read())
     return m.digest()
 
 def dedup(files):
-    pool = multiprocessing.Pool(args.workers)
-    seen_hash = set()
-    result = []
-    hashmap = {}
-    for i, h in enumerate(pool.map(hash_file, files)):
-        if h in seen_hash:
-            continue
-        seen_hash.add(h)
-        result.append(files[i])
-        hashmap[files[i]] = h
-    return result, hashmap
+    with multiprocessing.Pool(args.workers) as pool:
+      seen_hash = set()
+      result = []
+      hashmap = {}
+      for i, h in enumerate(pool.map(hash_file, files)):
+          if h in seen_hash:
+              continue
+          seen_hash.add(h)
+          result.append(files[i])
+          hashmap[files[i]] = h
+      return result, hashmap
+
+def collect_files(input_paths):
+  paths = []
+  for s in input_paths:
+      paths += glob.glob(s)
+
+  files = []
+  for path in paths:
+    for root, dirnames, filenames in os.walk(path, followlinks=True):
+      if 'queue' in dirnames:
+        # modify in-place
+        dirnames[:] = ['queue']
+        continue
+
+      for filename in filenames:
+        if filename.startswith('.'):
+          continue
+        files.append(os.path.join(root, filename))
+  return files
 
 def main():
     init()
 
-    files = [os.path.join(dn, fn) for dn in args.input for fn in os.listdir(dn) if not fn.startswith('.')]
+    files = collect_files(args.input)
     if len(files) == 0:
         logger.error('no inputs in the target directory - nothing to be done')
         sys.exit(1)
@@ -301,7 +324,7 @@ def main():
         ms.append(m)
         counter.update(c)
         crashes.extend(crs)
-    best_idxes = map(min, zip(*ms))
+    best_idxes = list(map(min, zip(*ms)))
 
     if not args.crash_dir:
         logger.info('Found %d unique tuples across %d files (%d effective)',
@@ -320,7 +343,7 @@ def main():
 
         idx = best_idxes[t]
         input_path = files[idx]
-        fn = (base64.b16encode(hashmap[input_path]).lower()
+        fn = (base64.b16encode(hashmap[input_path]).decode('utf8').lower()
               if not args.no_dedup
               else os.path.basename(input_path))
         if args.as_queue:
@@ -334,7 +357,8 @@ def main():
             shutil.copy(input_path, output_path)
 
         trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
-        result = array.array('l', file(trace_fn).read())
+        with open(trace_fn, 'rb') as f:
+          result = array.array('l', f.read())
         for t in result:
             already_have.add(t)
         count += 1
