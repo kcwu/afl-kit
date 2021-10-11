@@ -36,6 +36,7 @@ import textwrap
 import time
 
 MSAN_ERROR = 86
+LSAN_ERROR = 23
 
 g_execs = 0
 
@@ -67,7 +68,7 @@ def create_argument_parser():
     group.add_argument(
         '-m',
         dest='memory_limit',
-        default='50',
+        default='none',
         metavar='megs',
         help='memory limit for child process (default: %(default)s)')
 
@@ -89,6 +90,7 @@ def create_argument_parser():
     group.add_argument('--returncode', type=int)
     group.add_argument('--signal', type=int)
     group.add_argument(
+        '-H',
         '--timeout',
         action='store_true',
         help='Execution time longer than timeout value specified by -t')
@@ -163,14 +165,46 @@ def run_target_once(opts, data):
                 'detect_leaks=0',
                 'symbolize=0',
                 'allocator_may_return_null=1',
-                #'detect_stack_use_after_return=1',
+                'detect_odr_violation=0',
+                'handle_segv=0',
+                'handle_sigbus=0',
+                'handle_abort=0',
+                'handle_sigfpe=0',
+                'handle_sigill=0',
             ]))
         env.setdefault('MSAN_OPTIONS', ':'.join([
             'exit_code=%d' % MSAN_ERROR,
-            'symbolize=0',
             'abort_on_error=1',
-            'allocator_may_return_null=1',
             'msan_track_origins=0',
+            'allocator_may_return_null=1',
+            'symbolize=0',
+            'handle_segv=0',
+            'handle_sigbus=0',
+            'handle_abort=0',
+            'handle_sigfpe=0',
+            'handle_sigill=0',
+        ]))
+        env.setdefault(
+            'UBSAN_OPTIONS',
+            ':'.join([
+                'halt_on_error=1',
+                'abort_on_error=1',
+                'malloc_context_size=0',
+                'allocator_may_return_null=1',
+                'symbolize=0',
+                'handle_segv=0',
+                'handle_sigbus=0',
+                'handle_abort=0',
+                'handle_sigfpe=0',
+                'handle_sigill=0',
+        ]))
+        env.setdefault(
+            'LSAN_OPTIONS',
+            ':'.join([
+            'exit_code=%d' % LSAN_ERROR,
+            'fast_unwind_on_malloc=0',
+            'symbolize=0',
+            'print_suppressions=0',
         ]))
         # for stack protector
         env['LIBC_FATAL_STDERR_'] = '1'
