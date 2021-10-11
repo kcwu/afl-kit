@@ -14,17 +14,17 @@
 # limitations under the License.
 #
 import argparse
-import sys
-import logging
-import os
-import subprocess
-import shutil
-import multiprocessing
 import array
+import base64
 import collections
 import glob
 import hashlib
-import base64
+import logging
+import multiprocessing
+import os
+import shutil
+import subprocess
+import sys
 
 try:
     from tqdm import tqdm
@@ -107,7 +107,7 @@ group.add_argument('-w',
                    dest='workers',
                    type=int,
                    default=cpu_count // 2,
-                   help='number of concurrent worker (%d)' % (cpu_count // 2))
+                   help='number of concurrent worker (default: %(default)d)')
 group.add_argument('--as_queue',
                    action='store_true',
                    help='output file name like "id:000000,hash:value"')
@@ -137,8 +137,6 @@ def init():
 
     if args.crash_only:
         os.environ['AFL_CMIN_CRASHES_ONLY'] = '1'
-    if args.memory_limit is None:
-        args.memory_limit = 100
 
     if args.memory_limit != 'none' and args.memory_limit < 10:
         logger.error('dangerously low memory limit')
@@ -277,7 +275,7 @@ class JobDispatcher(multiprocessing.Process):
 
 class Worker(multiprocessing.Process):
     def __init__(self, idx, q_in, p_out, r_out):
-        super(Worker, self).__init__()
+        super().__init__()
         self.idx = idx
         self.q_in = q_in
         self.p_out = p_out
@@ -493,6 +491,7 @@ def main():
         logger.warn('all test cases had the same traces, check syntax!')
     logger.info('narrowed down to %s files, saved in "%s"', count, args.output)
     if not os.environ.get('AFL_KEEP_TRACES'):
+        logger.info('Deleting trace files')
         trace_dir = os.path.join(args.output, '.traces')
         shutil.rmtree(trace_dir, ignore_errors=True)
 
