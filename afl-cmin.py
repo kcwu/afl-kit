@@ -263,9 +263,22 @@ def afl_showmap(input_path, first=False):
     return a, crashed
 
 
+class JobDispatcher(multiprocessing.Process):
+    def __init__(self, job_queue, jobs):
+        super().__init__()
+        self.job_queue = job_queue
+        self.jobs = jobs
+
+    def run(self):
+        for job in self.jobs:
+            self.job_queue.put(job)
+        self.job_queue.close()
+
+
 class Worker(multiprocessing.Process):
-    def __init__(self, q_in, p_out, r_out):
+    def __init__(self, idx, q_in, p_out, r_out):
         super(Worker, self).__init__()
+        self.idx = idx
         self.q_in = q_in
         self.p_out = p_out
         self.r_out = r_out
@@ -310,7 +323,7 @@ class Worker(multiprocessing.Process):
             else:
                 self.p_out.put(None)
 
-        self.r_out.put((m, counter, crashes))
+        self.r_out.put((self.idx, m, counter, crashes))
 
 
 def hash_file(path):
@@ -386,32 +399,33 @@ def main():
     result_queue = multiprocessing.Queue()
 
     workers = []
-    for _ in range(args.workers):
-        p = Worker(job_queue, progress_queue, result_queue)
+    for i in range(args.workers):
+        p = Worker(i, job_queue, progress_queue, result_queue)
         p.start()
         workers.append(p)
 
-    logger.info('Obtaining trace results')
-    for job in enumerate(files):
-        job_queue.put(job)
-    for _ in range(args.workers):
-        job_queue.put(None)
-    job_queue.close()
+    jobs = list(enumerate(files)) + [None] * args.workers
+    dispatcher = JobDispatcher(job_queue, jobs)
+    dispatcher.start()
 
+    logger.info('Processing traces')
     effective = 0
     for _ in tqdm(files):
         idx = progress_queue.get()
         if idx is not None:
             effective += 1
+    dispatcher.join()
 
+    logger.info('Obtaining trace results')
     ms = []
     crashes = []
     counter = collections.Counter()
-    for _ in range(args.workers):
-        m, c, crs = result_queue.get()
+    for _ in tqdm(range(args.workers)):
+        idx, m, c, crs = result_queue.get()
         ms.append(m)
         counter.update(c)
         crashes.extend(crs)
+        workers[idx].join()
     best_idxes = list(map(min, zip(*ms)))
 
     if not args.crash_dir:
