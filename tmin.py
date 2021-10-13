@@ -134,20 +134,23 @@ def setlimits(opts):
         resource.setrlimit(resource.RLIMIT_RSS, (m, m))
 
 
-def run_target_once(opts, data):
+def run_target_once(opts, data, filename=None):
     """
     return True if match condition
     """
     global g_execs
     logger.debug('run %d', len(data))
 
-    # because we closed the fd and lose the lock, add pid as prefix to avoid
-    # racing.
-    tmp_fd, tmp_fn = tempfile.mkstemp(prefix='tmin-%d' % os.getpid())
     pid = os.getpid()
     try:
-        os.write(tmp_fd, data)
-        os.close(tmp_fd)
+        if filename:
+          tmp_fn = filename
+        else:
+          # because we closed the fd and lose the lock, add pid as prefix to avoid
+          # racing.
+          tmp_fd, tmp_fn = tempfile.mkstemp(prefix='tmin-%d' % os.getpid())
+          os.write(tmp_fd, data)
+          os.close(tmp_fd)
 
         found_input_file = False
         cmd = opts.args[:]
@@ -263,8 +266,9 @@ def run_target_once(opts, data):
         crashed = p.returncode < 0 or p.returncode == MSAN_ERROR
     finally:
         # XXX why?
-        if pid == os.getpid():
-            os.unlink(tmp_fn)
+        if not filename:
+            if pid == os.getpid():
+                os.unlink(tmp_fn)
 
     #logger.info('stdout begin =====')
     #logger.info('%s', stdout)
@@ -336,12 +340,12 @@ def run_target_once(opts, data):
     return True
 
 
-def run_target(opts, data):
+def run_target(opts, data, filename=None):
     """
     return True if match condition
     """
     for _ in range(opts.try_):
-        if run_target_once(opts, data):
+        if run_target_once(opts, data, filename=filename):
             return True
     return False
 
@@ -459,15 +463,17 @@ def step_character_minimization(opts, data, dummy_char):
 
 # use afl-tmin's minimization strategy
 def minimize(opts):
+    filename = None
     if opts.input == '-':
         data = orig_data = sys.stdin.read()
     else:
         with open(opts.input, 'rb') as f:
           data = orig_data = f.read()
+        filename = opts.input
     logger.info('initial len=%d', len(data))
 
     logger.info('initial dry run')
-    assert run_target(opts, data)
+    assert run_target(opts, data, filename=filename)
     if opts.dryrun:
         return
 
