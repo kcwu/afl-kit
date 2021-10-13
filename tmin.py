@@ -295,10 +295,6 @@ def run_target_once(opts, data, filename=None):
     g_execs += 1
 
     if g_execs == 1 and opts.auto:
-        opts.returncode = p.returncode
-        if opts.returncode != 0:
-            logger.info('AUTO: returncode=%s', opts.returncode)
-            return True
         opts.timeout = opts.time_limit < (t1 - t0) * 1000
         if opts.timeout:
             logger.info('AUTO: timeout=%s', opts.timeout)
@@ -306,6 +302,10 @@ def run_target_once(opts, data, filename=None):
         if p.returncode < 0:
             opts.signal = -p.returncode
             logger.info('AUTO: signal=%s', opts.signal)
+            return True
+        opts.returncode = p.returncode
+        if opts.returncode != 0:
+            logger.info('AUTO: returncode=%s', opts.returncode)
             return True
         m = re.search(br'ERROR: AddressSanitizer: (.+) on', stderr)
         if m:
