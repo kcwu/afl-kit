@@ -214,6 +214,8 @@ def run_target_once(opts, data):
 
         if g_execs == 0:
             for k, v in sorted(env.items()):
+                if os.environ.get(k) == v:
+                  continue
                 logger.debug('env[%r]=%r', k, v)
             logger.debug('run command line=%s', subprocess.list2cmdline(cmd))
 
@@ -272,8 +274,13 @@ def run_target_once(opts, data):
     #logger.info('stderr end =====')
     if g_execs == 0 and stderr:
         logger.info('stderr begin (last 8kb, 100 lines) =====')
-        stderr = stderr[-8192:]
         stderr = b'\n'.join(stderr.splitlines()[-100:])
+        try:
+          stderr = stderr.decode('utf8')
+        except UnicodeDecodeError:
+          # keep stderr be bytes if it is not utf8.
+          pass
+        stderr = stderr[-8192:]
         logger.info('%s', stderr)
         logger.info('stderr end =====')
     if g_execs == 0:
@@ -287,12 +294,15 @@ def run_target_once(opts, data):
         opts.returncode = p.returncode
         if opts.returncode != 0:
             logger.info('AUTO: returncode=%s', opts.returncode)
+            return True
         opts.timeout = opts.time_limit < (t1 - t0) * 1000
         if opts.timeout:
             logger.info('AUTO: timeout=%s', opts.timeout)
+            return True
         if p.returncode < 0:
             opts.signal = -p.returncode
             logger.info('AUTO: signal=%s', opts.signal)
+            return True
         m = re.search(br'ERROR: AddressSanitizer: (.+) on', stderr)
         if m:
             opts.stderr = [m.group()]
@@ -300,6 +310,9 @@ def run_target_once(opts, data):
             if m:
                 opts.stderr.append(m.group())
             logger.info('AUTO: stderr=%r', opts.stderr)
+            return True
+        logger.error('failed to detect error conditions automatically (--auto)')
+        return False
 
     for s in opts.stdout:
         if s not in stdout:
