@@ -169,6 +169,7 @@ def run_target_once(opts, data, filename=None):
                 'symbolize=0',
                 'allocator_may_return_null=1',
                 'detect_odr_violation=0',
+                'print_scariness=1',
                 'handle_segv=0',
                 'handle_sigbus=0',
                 'handle_abort=0',
@@ -313,6 +314,9 @@ def run_target_once(opts, data, filename=None):
         if m:
             opts.stderr = [m.group()]
             m = re.search(br'(READ|WRITE) of size ', stderr)
+            if m:
+                opts.stderr.append(m.group())
+            m = re.search(br'(SCARINESS: \d+ .*)', stderr)
             if m:
                 opts.stderr.append(m.group())
             logger.info('AUTO: stderr=%r', opts.stderr)
