@@ -278,14 +278,14 @@ def run_target_once(opts, data, filename=None):
     #logger.info('stderr end =====')
     if g_execs == 0 and stderr:
         logger.info('stderr begin (last 8kb, 100 lines) =====')
-        stderr = b'\n'.join(stderr.splitlines()[-100:])
+        stderr_brief = b'\n'.join(stderr.splitlines()[-100:])
         try:
-          stderr = stderr.decode('utf8')
+          stderr_brief = stderr_brief.decode('utf8')
         except UnicodeDecodeError:
           # keep stderr be bytes if it is not utf8.
           pass
-        stderr = stderr[-8192:]
-        logger.info('%s', stderr)
+        stderr_brief = stderr_brief[-8192:]
+        logger.info('%s', stderr_brief)
         logger.info('stderr end =====')
     if g_execs == 0:
         logger.info('returncode=%d, t=%.3fs', p.returncode, t1 - t0)
@@ -295,18 +295,20 @@ def run_target_once(opts, data, filename=None):
     g_execs += 1
 
     if g_execs == 1 and opts.auto:
+        auto_found = False
         opts.timeout = opts.time_limit < (t1 - t0) * 1000
         if opts.timeout:
             logger.info('AUTO: timeout=%s', opts.timeout)
-            return True
+            auto_found = True
         if p.returncode < 0:
             opts.signal = -p.returncode
             logger.info('AUTO: signal=%s', opts.signal)
-            return True
-        opts.returncode = p.returncode
-        if opts.returncode != 0:
-            logger.info('AUTO: returncode=%s', opts.returncode)
-            return True
+            auto_found = True
+        if p.returncode >= 0:
+            opts.returncode = p.returncode
+            if opts.returncode != 0:
+                logger.info('AUTO: returncode=%s', opts.returncode)
+                auto_found = True
         m = re.search(br'ERROR: AddressSanitizer: (.+) on', stderr)
         if m:
             opts.stderr = [m.group()]
@@ -314,9 +316,10 @@ def run_target_once(opts, data, filename=None):
             if m:
                 opts.stderr.append(m.group())
             logger.info('AUTO: stderr=%r', opts.stderr)
-            return True
-        logger.error('failed to detect error conditions automatically (--auto)')
-        return False
+            auto_found = True
+        if not auto_found:
+            logger.error('failed to detect error conditions automatically (--auto)')
+            return False
 
     for s in opts.stdout:
         if s not in stdout:
