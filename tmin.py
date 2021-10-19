@@ -312,7 +312,7 @@ def run_target_once(opts, data, filename=None):
                 auto_found = True
         m = re.search(br'ERROR: AddressSanitizer: (.+) on', stderr)
         if m:
-            opts.stderr = [m.group()]
+            opts.stderr += [m.group()]
             m = re.search(br'(READ|WRITE) of size ', stderr)
             if m:
                 opts.stderr.append(m.group())
@@ -534,6 +534,11 @@ def main():
         libc = ctypes.CDLL(None)
         ADDR_NO_RANDOMIZE = 0x0040000
         assert 0 == libc['personality'](ADDR_NO_RANDOMIZE)
+
+    for i, s in enumerate(opts.stdout):
+      opts.stdout[i] = s.encode('utf8')
+    for i, s in enumerate(opts.stderr):
+      opts.stderr[i] = s.encode('utf8')
 
     data = minimize(opts)
     if opts.dryrun:
