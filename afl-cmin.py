@@ -353,7 +353,7 @@ def collect_files(input_paths):
     files = []
     for path in paths:
         for root, dirnames, filenames in os.walk(path, followlinks=True):
-            if 'queue' in dirnames:
+            if args.crash_only and 'queue' in dirnames:
                 # modify in-place
                 dirnames[:] = ['queue']
                 continue
