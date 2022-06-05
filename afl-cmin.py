@@ -336,7 +336,7 @@ def dedup(files):
         seen_hash = set()
         result = []
         hashmap = {}
-        for i, h in enumerate(pool.map(hash_file, files)):
+        for i, h in enumerate(tqdm(pool.imap(hash_file, files), total=len(files))):
             if h in seen_hash:
                 continue
             seen_hash.add(h)
