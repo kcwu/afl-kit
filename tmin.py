@@ -334,8 +334,7 @@ def run_target_once(opts, data, filename=None):
 
     if opts.returncode is not None and opts.returncode != p.returncode:
         return False
-    if opts.timeout is not None and \
-        opts.timeout != (opts.time_limit < (t1 - t0) * 1000):
+    if opts.timeout and opts.timeout != (opts.time_limit < (t1 - t0) * 1000):
         return False
     if opts.signal and (p.returncode > 0 or opts.signal != -p.returncode):
         return False
