@@ -252,6 +252,7 @@ def afl_showmap(input_path, first=False):
         if not line.isdigit():
             continue
         values.append(int(line))
+    values = [(t // 1000) * 9 + t % 1000 for t in values]
     a = array.array('l', values)
 
     # return code of afl-showmap is child_crashed * 2 + child_timed_out where
@@ -283,7 +284,7 @@ class Worker(multiprocessing.Process):
 
     def run(self):
         map_size = int(os.environ.get('AFL_MAP_SIZE', '65536'))
-        max_value = int('8' + str(map_size))
+        max_value = map_size * 9
         m = array.array('l', [0xffffff] * max_value)
         counter = collections.Counter()
         crashes = []
