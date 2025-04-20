@@ -31,9 +31,21 @@ try:
 except ImportError:
     print('Hint: install python module "tqdm" to show progress bar')
 
-    def tqdm(data, *args, **argd):
-        for x in data:
-            yield x
+    class tqdm:
+        def __init__(self, data=None, *args, **argd):
+            self.data = data
+
+        def __iter__(self):
+            yield from self.data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            pass
+
+        def update(self, *args):
+            pass
 
 
 parser = argparse.ArgumentParser()
