@@ -559,7 +559,7 @@ def main():
                     pass
 
     if count == 1:
-        logger.warn('all test cases had the same traces, check syntax!')
+        logger.warning('all test cases had the same traces, check syntax!')
     logger.info('narrowed down to %s files, saved in "%s"', count, args.output)
     if not os.environ.get('AFL_KEEP_TRACES'):
         logger.info('Deleting trace files')
