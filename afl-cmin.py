@@ -354,7 +354,10 @@ def dedup(files):
         seen_hash = set()
         result = []
         hashmap = {}
-        for i, h in enumerate(tqdm(pool.imap(hash_file, files), total=len(files))):
+        for i, h in enumerate(tqdm(pool.imap(hash_file, files),
+                                   desc='dedup',
+                                   total=len(files),
+                                   leave=(len(files) > 100000))):
             if h in seen_hash:
                 continue
             seen_hash.add(h)
@@ -369,21 +372,23 @@ def collect_files(input_paths):
         paths += glob.glob(s)
 
     files = []
-    for path in paths:
-        for root, dirnames, filenames in os.walk(path, followlinks=True):
-            if args.crash_only and 'queue' in dirnames:
-                # modify in-place
-                dirnames[:] = ['queue']
-                continue
-
-            for dirname in dirnames:
-                if dirname.startswith('.'):
-                    dirnames.remove(dirname)
-
-            for filename in filenames:
-                if filename.startswith('.'):
+    with tqdm(desc='search', unit=' files') as pbar:
+        for path in paths:
+            for root, dirnames, filenames in os.walk(path, followlinks=True):
+                if args.crash_only and 'queue' in dirnames:
+                    # modify in-place
+                    dirnames[:] = ['queue']
                     continue
-                files.append(os.path.join(root, filename))
+
+                for dirname in dirnames:
+                    if dirname.startswith('.'):
+                        dirnames.remove(dirname)
+
+                for filename in filenames:
+                    if filename.startswith('.'):
+                        continue
+                    pbar.update(1)
+                    files.append(os.path.join(root, filename))
     return files
 
 
