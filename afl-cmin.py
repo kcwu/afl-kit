@@ -209,7 +209,7 @@ def init():
     logger.info('use %d workers (-T)', args.workers)
 
 
-def afl_showmap(input_path, first=False):
+def afl_showmap(input_path, afl_map_size=None, first=False):
     # yapf: disable
     cmd = [
         afl_showmap_bin,
@@ -244,6 +244,8 @@ def afl_showmap(input_path, first=False):
     if first:
         logger.debug('run command line: %s', subprocess.list2cmdline(cmd))
         env['AFL_CMIN_ALLOW_ANY'] = '1'
+    if afl_map_size:
+        env['AFL_MAP_SIZE'] = str(afl_map_size)
 
     if input_from_file:
         p = subprocess.Popen(cmd,
@@ -289,15 +291,16 @@ class JobDispatcher(multiprocessing.Process):
 
 
 class Worker(multiprocessing.Process):
-    def __init__(self, idx, q_in, p_out, r_out):
+    def __init__(self, idx, afl_map_size, q_in, p_out, r_out):
         super().__init__()
         self.idx = idx
+        self.afl_map_size = afl_map_size
         self.q_in = q_in
         self.p_out = p_out
         self.r_out = r_out
 
     def run(self):
-        map_size = int(os.environ.get('AFL_MAP_SIZE', '65536'))
+        map_size = self.afl_map_size or 65536
         max_value = map_size * 9
         m = array.array('l', [0xffffff] * max_value)
         counter = collections.Counter()
@@ -309,7 +312,7 @@ class Worker(multiprocessing.Process):
                 break
 
             idx, input_path = job
-            r, crash = afl_showmap(input_path)
+            r, crash = afl_showmap(input_path, afl_map_size=self.afl_map_size)
             counter.update(r)
 
             used = False
@@ -403,8 +406,16 @@ def main():
     logger.info('Sorting files.')
     files = sorted(files, key=os.path.getsize)
 
+    afl_map_size = None
+    if b'AFL_DUMP_MAP_SIZE' in open(args.exe, 'rb').read():
+        output = subprocess.run([args.exe],
+                                capture_output=True,
+                                env={'AFL_DUMP_MAP_SIZE': '1'}).stdout
+        afl_map_size = int(output)
+        logger.info('Setting AFL_MAP_SIZE=%d', afl_map_size)
+
     logger.info('Testing the target binary')
-    tuples, _ = afl_showmap(files[0], first=True)
+    tuples, _ = afl_showmap(files[0], afl_map_size=afl_map_size, first=True)
     if tuples:
         logger.info('ok, %d tuples recorded', len(tuples))
     else:
@@ -417,7 +428,7 @@ def main():
 
     workers = []
     for i in range(args.workers):
-        p = Worker(i, job_queue, progress_queue, result_queue)
+        p = Worker(i, afl_map_size, job_queue, progress_queue, result_queue)
         p.start()
         workers.append(p)
 
