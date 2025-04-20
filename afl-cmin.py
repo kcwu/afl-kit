@@ -170,7 +170,7 @@ def init():
             sys.exit(1)
 
     for dn in args.input:
-        if not os.path.isdir(dn):
+        if not os.path.isdir(dn) and not glob.glob(dn):
             logger.error('directory "%s" not found', dn)
             sys.exit(1)
 
