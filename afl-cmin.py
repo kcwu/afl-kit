@@ -417,7 +417,7 @@ def collect_files(input_paths):
     with tqdm(desc='search', unit=' files') as pbar:
         for path in paths:
             for root, dirnames, filenames in os.walk(path, followlinks=True):
-                if args.crash_only and 'queue' in dirnames:
+                if not args.crash_only and 'queue' in dirnames:
                     # modify in-place
                     dirnames[:] = ['queue']
                     continue
