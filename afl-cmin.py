@@ -78,7 +78,7 @@ group.add_argument(
     help='memory limit for child process (default: %(default)s)')
 group.add_argument('-t',
                    dest='time_limit',
-                   default='none',
+                   default=5000,
                    metavar='msec',
                    type=lambda x: x if x == 'none' else int(x),
                    help='timeout for each run (default: %(default)s)')
