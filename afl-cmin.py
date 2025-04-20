@@ -98,6 +98,11 @@ group.add_argument('-U',
                    action='store_true',
                    default=False,
                    help='use unicorn-based instrumentation (Unicorn mode)')
+group.add_argument('-X',
+                   dest='nyx_mode',
+                   action='store_true',
+                   default=False,
+                   help='use Nyx mode')
 
 group = parser.add_argument_group('Minimization settings')
 group.add_argument('--crash-dir',
@@ -165,8 +170,8 @@ def init():
         logger.error('binary "%s" not found or not regular file', args.exe)
         sys.exit(1)
 
-    if not os.environ.get('AFL_SKIP_BIN_CHECK') and not (
-            args.qemu_mode or args.frida_mode or args.unicorn_mode):
+    if not os.environ.get('AFL_SKIP_BIN_CHECK') and not any([
+        args.qemu_mode, args.frida_mode, args.unicorn_mode, args.nyx_mode]):
         if b'__AFL_SHM_ID' not in open(args.exe, 'rb').read():
             logger.error("binary '%s' doesn't appear to be instrumented",
                          args.exe)
@@ -263,6 +268,8 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
         cmd += ['-Q']
     if args.unicorn_mode:
         cmd += ['-U']
+    if args.nyx_mode:
+        cmd += ['-X']
     if args.edge_mode:
         cmd += ['-e']
     cmd += ['--', args.exe] + args.args
