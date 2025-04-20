@@ -359,6 +359,10 @@ def collect_files(input_paths):
                 dirnames[:] = ['queue']
                 continue
 
+            for dirname in dirnames:
+                if dirname.startswith('.'):
+                    dirnames.remove(dirname)
+
             for filename in filenames:
                 if filename.startswith('.'):
                     continue
