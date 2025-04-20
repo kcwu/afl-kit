@@ -380,7 +380,7 @@ class Worker(multiprocessing.Process):
                 if used:
                     trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
                     with open(trace_fn, 'wb') as f:
-                        f.write(r.tobytes())
+                        r.tofile(f)
 
                     self.p_out.put(idx)
                 else:
@@ -492,7 +492,7 @@ def main():
         p.start()
         workers.append(p)
 
-    chunk = 128
+    chunk = max(1, min(128, len(files) // args.workers))
     jobs = list(itertools.batched(enumerate(files), chunk))
     jobs += [None] * args.workers  # sentinel
 
@@ -553,8 +553,7 @@ def main():
         trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
         with open(trace_fn, 'rb') as f:
             result = array.array(tuple_index_type_code, f.read())
-        for t in result:
-            already_have.add(t)
+        already_have.update(result)
         count += 1
 
     if args.crash_dir:
