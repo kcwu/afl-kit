@@ -25,6 +25,7 @@ import os
 import shutil
 import subprocess
 import sys
+import itertools
 
 try:
     from tqdm import tqdm
@@ -209,16 +210,43 @@ def init():
     logger.info('use %d workers (-T)', args.workers)
 
 
-def afl_showmap(input_path, afl_map_size=None, first=False):
+def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
+    assert input_path or batch
     # yapf: disable
     cmd = [
         afl_showmap_bin,
         '-m', str(args.memory_limit),
         '-t', str(args.time_limit),
-        '-o', '-',
-        '-Z',
+        '-Z', # cmin mode
     ]
     # yapf: enable
+    found_atat = False
+    for arg in args.args:
+        if '@@' in arg:
+            found_atat = True
+
+    if args.stdin_file:
+        assert args.workers == 1
+        input_from_file = True
+        cmd += ['-H', args.stdin_file]
+    elif found_atat:
+        input_from_file = True
+        at_file = os.path.join(args.output, f'.input.{os.getpid()}')
+        cmd += ['-H', at_file]
+    else:
+        input_from_file = False
+
+    if batch:
+        input_from_file = True
+        filelist = os.path.join(args.output, f'.filelist.{os.getpid()}')
+        with open(filelist, 'w') as f:
+            for _, path in batch:
+                f.write(path + '\n')
+        cmd += ['-I', filelist]
+        output_path = os.path.join(args.output, f'.showmap.{os.getpid()}')
+        cmd += ['-o', output_path]
+    else:
+        cmd += ['-o', '-']
     env = os.environ.copy()
 
     if args.frida_mode:
@@ -230,16 +258,6 @@ def afl_showmap(input_path, afl_map_size=None, first=False):
     if args.edge_mode:
         cmd += ['-e']
     cmd += ['--', args.exe] + args.args
-
-    input_from_file = False
-    if args.stdin_file:
-        input_from_file = True
-        shutil.copy(input_path, args.stdin_file)
-        input_path = args.stdin_file
-    for i in range(len(cmd)):
-        if '@@' in cmd[i]:
-            input_from_file = True
-            cmd[i] = cmd[i].replace('@@', input_path)
 
     if first:
         logger.debug('run command line: %s', subprocess.list2cmdline(cmd))
@@ -260,22 +278,37 @@ def afl_showmap(input_path, afl_map_size=None, first=False):
                              bufsize=1048576)
     out = p.stdout.read()
     p.wait()
-    #out = p.communicate()[0]
 
-    values = []
-    for line in out.split():
-        # we get result from stdout and afl-showmap may generate warnings to stdout as well.
-        if not line.isdigit():
-            continue
-        values.append(int(line))
-    values = [(t // 1000) * 9 + t % 1000 for t in values]
-    a = array.array('l', values)
-
-    # return code of afl-showmap is child_crashed * 2 + child_timed_out where
-    # child_crashed and child_timed_out are either 0 or 1
-    crashed = p.returncode in [2, 3]
-
-    return a, crashed
+    if batch:
+        result = []
+        for idx, input_path in batch:
+            basename = os.path.basename(input_path)
+            values = []
+            try:
+                trace_file = os.path.join(output_path, basename)
+                with open(trace_file, 'r') as f:
+                    for line in f:
+                        values.append(int(line))
+                crashed = False
+                os.unlink(trace_file)
+            except FileNotFoundError:
+                a = None
+                crashed = True
+            values = [(t // 1000) * 9 + t % 1000 for t in values]
+            a = array.array('l', values)
+            result.append((idx, a, crashed))
+        os.unlink(filelist)
+        return result
+    else:
+        values = []
+        for line in out.split():
+            if not line.isdigit():
+                continue
+            values.append(int(line))
+        values = [(t // 1000) * 9 + t % 1000 for t in values]
+        a = array.array('l', values)
+        crashed = p.returncode in [2, 3]
+        return a, crashed
 
 
 class JobDispatcher(multiprocessing.Process):
@@ -306,38 +339,36 @@ class Worker(multiprocessing.Process):
         counter = collections.Counter()
         crashes = []
         while True:
-            # job is ordered by size, small to large
-            job = self.q_in.get()
-            if job is None:
+            batch = self.q_in.get()
+            if batch is None:
                 break
 
-            idx, input_path = job
-            r, crash = afl_showmap(input_path, afl_map_size=self.afl_map_size)
-            counter.update(r)
+            for idx, r, crash in afl_showmap(batch=batch, afl_map_size=self.afl_map_size):
+                counter.update(r)
 
-            used = False
+                used = False
 
-            if crash:
-                crashes.append(idx)
+                if crash:
+                    crashes.append(idx)
 
-            # If we aren't saving crashes to a separate dir, handle them
-            # the same as other inputs. However, unless AFL_CMIN_ALLOW_ANY=1,
-            # afl_showmap will not return any coverage for crashes so they will
-            # never be retained.
-            if not crash or not args.crash_dir:
-                for t in r:
-                    if idx < m[t]:
-                        m[t] = idx
-                        used = True
+                # If we aren't saving crashes to a separate dir, handle them
+                # the same as other inputs. However, unless AFL_CMIN_ALLOW_ANY=1,
+                # afl_showmap will not return any coverage for crashes so they will
+                # never be retained.
+                if not crash or not args.crash_dir:
+                    for t in r:
+                        if idx < m[t]:
+                            m[t] = idx
+                            used = True
 
-            if used:
-                trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
-                with open(trace_fn, 'wb') as f:
-                    f.write(r.tobytes())
+                if used:
+                    trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
+                    with open(trace_fn, 'wb') as f:
+                        f.write(r.tobytes())
 
-                self.p_out.put(idx)
-            else:
-                self.p_out.put(None)
+                    self.p_out.put(idx)
+                else:
+                    self.p_out.put(None)
 
         self.r_out.put((self.idx, m, counter, crashes))
 
@@ -439,7 +470,10 @@ def main():
         p.start()
         workers.append(p)
 
-    jobs = list(enumerate(files)) + [None] * args.workers
+    chunk = 128
+    jobs = list(itertools.batched(enumerate(files), chunk))
+    jobs += [None] * args.workers  # sentinel
+
     dispatcher = JobDispatcher(job_queue, jobs)
     dispatcher.start()
 
