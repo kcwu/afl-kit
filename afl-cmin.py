@@ -115,10 +115,10 @@ group.add_argument('-e',
                    help='solve for edge coverage only, ignore hit counts')
 
 group = parser.add_argument_group('Misc')
-group.add_argument('-w',
+group.add_argument('-T',
                    dest='workers',
-                   type=int,
-                   default=cpu_count // 2,
+                   type=lambda x: cpu_count if x == 'all' else int(x),
+                   default=1,
                    help='number of concurrent worker (default: %(default)d)')
 group.add_argument('--as_queue',
                    action='store_true',
@@ -144,7 +144,7 @@ def init():
     logger = logging.getLogger(__name__)
 
     if args.stdin_file and args.workers > 1:
-        logger.error('-f is only supported with one worker (-w 1)')
+        logger.error('-f is only supported with one worker (-T 1)')
         sys.exit(1)
 
     if args.crash_only:
@@ -205,6 +205,8 @@ def init():
     if args.crash_dir and not os.path.exists(args.crash_dir):
         os.makedirs(args.crash_dir)
     os.makedirs(trace_dir)
+
+    logger.info('use %d workers (-T)', args.workers)
 
 
 def afl_showmap(input_path, first=False):
