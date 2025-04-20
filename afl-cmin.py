@@ -135,6 +135,8 @@ parser.add_argument('args', nargs='*')
 args = parser.parse_args()
 logger = None
 afl_showmap_bin = None
+tuple_index_type_code = 'I'
+file_index_type_code = None
 
 
 def init():
@@ -208,6 +210,12 @@ def init():
     os.makedirs(trace_dir)
 
     logger.info('use %d workers (-T)', args.workers)
+
+
+def detect_type_code(size):
+    for type_code in ['B', 'H', 'I', 'L', 'Q']:
+        if 256**array.array(type_code).itemsize > size:
+            return type_code
 
 
 def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
@@ -295,7 +303,7 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
                 a = None
                 crashed = True
             values = [(t // 1000) * 9 + t % 1000 for t in values]
-            a = array.array('l', values)
+            a = array.array(tuple_index_type_code, values)
             result.append((idx, a, crashed))
         os.unlink(filelist)
         return result
@@ -306,7 +314,7 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
                 continue
             values.append(int(line))
         values = [(t // 1000) * 9 + t % 1000 for t in values]
-        a = array.array('l', values)
+        a = array.array(tuple_index_type_code, values)
         crashed = p.returncode in [2, 3]
         return a, crashed
 
@@ -334,8 +342,9 @@ class Worker(multiprocessing.Process):
 
     def run(self):
         map_size = self.afl_map_size or 65536
-        max_value = map_size * 9
-        m = array.array('l', [0xffffff] * max_value)
+        max_tuple = map_size * 9
+        max_file_index = 256**array.array(file_index_type_code).itemsize - 1
+        m = array.array(file_index_type_code, [max_file_index] * max_tuple)
         counter = collections.Counter()
         crashes = []
         while True:
@@ -441,6 +450,9 @@ def main():
     else:
         logger.info('Skipping file deduplication.')
 
+    global file_index_type_code
+    file_index_type_code = detect_type_code(len(files))
+
     logger.info('Sorting files.')
     files = sorted(files, key=os.path.getsize)
 
@@ -451,6 +463,9 @@ def main():
                                 env={'AFL_DUMP_MAP_SIZE': '1'}).stdout
         afl_map_size = int(output)
         logger.info('Setting AFL_MAP_SIZE=%d', afl_map_size)
+
+        global tuple_index_type_code
+        tuple_index_type_code = detect_type_code(afl_map_size * 9)
 
     logger.info('Testing the target binary')
     tuples, _ = afl_showmap(files[0], afl_map_size=afl_map_size, first=True)
@@ -530,7 +545,7 @@ def main():
 
         trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
         with open(trace_fn, 'rb') as f:
-            result = array.array('l', f.read())
+            result = array.array(tuple_index_type_code, f.read())
         for t in result:
             already_have.add(t)
         count += 1
