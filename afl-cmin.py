@@ -354,7 +354,9 @@ def dedup(files):
         seen_hash = set()
         result = []
         hashmap = {}
-        for i, h in enumerate(tqdm(pool.imap(hash_file, files),
+        # use large chunksize to reduce multiprocessing overhead
+        chunksize = max(1, min(256, len(files) // args.workers))
+        for i, h in enumerate(tqdm(pool.imap(hash_file, files, chunksize),
                                    desc='dedup',
                                    total=len(files),
                                    leave=(len(files) > 100000))):
