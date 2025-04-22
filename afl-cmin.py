@@ -354,37 +354,40 @@ class Worker(multiprocessing.Process):
         m = array.array(file_index_type_code, [max_file_index] * max_tuple)
         counter = collections.Counter()
         crashes = []
-        while True:
-            batch = self.q_in.get()
-            if batch is None:
-                break
 
-            for idx, r, crash in afl_showmap(batch=batch, afl_map_size=self.afl_map_size):
-                counter.update(r)
+        pack_name = os.path.join(args.output, '.traces', f'{self.idx}.pack')
+        pack_pos = 0
+        with open(pack_name, 'wb') as trace_pack:
+            while True:
+                batch = self.q_in.get()
+                if batch is None:
+                    break
 
-                used = False
+                for idx, r, crash in afl_showmap(batch=batch, afl_map_size=self.afl_map_size):
+                    counter.update(r)
 
-                if crash:
-                    crashes.append(idx)
+                    used = False
 
-                # If we aren't saving crashes to a separate dir, handle them
-                # the same as other inputs. However, unless AFL_CMIN_ALLOW_ANY=1,
-                # afl_showmap will not return any coverage for crashes so they will
-                # never be retained.
-                if not crash or not args.crash_dir:
-                    for t in r:
-                        if idx < m[t]:
-                            m[t] = idx
-                            used = True
+                    if crash:
+                        crashes.append(idx)
 
-                if used:
-                    trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
-                    with open(trace_fn, 'wb') as f:
-                        r.tofile(f)
+                    # If we aren't saving crashes to a separate dir, handle them
+                    # the same as other inputs. However, unless AFL_CMIN_ALLOW_ANY=1,
+                    # afl_showmap will not return any coverage for crashes so they will
+                    # never be retained.
+                    if not crash or not args.crash_dir:
+                        for t in r:
+                            if idx < m[t]:
+                                m[t] = idx
+                                used = True
 
-                    self.p_out.put(idx)
-                else:
-                    self.p_out.put(None)
+                    if used:
+                        tuple_count = len(r)
+                        r.tofile(trace_pack)
+                        self.p_out.put((idx, self.idx, pack_pos, tuple_count))
+                        pack_pos += tuple_count * r.itemsize
+                    else:
+                        self.p_out.put(None)
 
         self.r_out.put((self.idx, m, counter, crashes))
 
@@ -501,9 +504,12 @@ def main():
 
     logger.info('Processing traces')
     effective = 0
+    trace_info = {}
     for _ in tqdm(files):
-        idx = progress_queue.get()
-        if idx is not None:
+        r = progress_queue.get()
+        if r is not None:
+            idx, worker_idx, pos, tuple_count = r
+            trace_info[idx] = worker_idx, pos, tuple_count
             effective += 1
     dispatcher.join()
 
@@ -531,6 +537,13 @@ def main():
     logger.info('Processing candidates and writing output')
     already_have = set()
     count = 0
+
+    trace_packs = []
+    for i in range(args.workers):
+        pack_name = os.path.join(args.output, '.traces', f'{i}.pack')
+        trace_f = open(pack_name, 'rb')
+        trace_packs.append(trace_f)
+
     for t, c in tqdm(list(reversed(all_unique))):
         if t in already_have:
             continue
@@ -550,11 +563,17 @@ def main():
         except OSError:
             shutil.copy(input_path, output_path)
 
-        trace_fn = os.path.join(args.output, '.traces', '%d' % idx)
-        with open(trace_fn, 'rb') as f:
-            result = array.array(tuple_index_type_code, f.read())
+        worker_idx, pos, tuple_count = trace_info[idx]
+        trace_pack = trace_packs[worker_idx]
+        trace_pack.seek(pos)
+        result = array.array(tuple_index_type_code)
+        result.fromfile(trace_pack, tuple_count)
+
         already_have.update(result)
         count += 1
+
+    for f in trace_packs:
+        f.close()
 
     if args.crash_dir:
         logger.info('Saving crashes to %s', args.crash_dir)
