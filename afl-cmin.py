@@ -435,6 +435,11 @@ def dedup(files):
         return result, hashmap
 
 
+def is_afl_dir(dirnames, filenames):
+    return ('queue' in dirnames and 'hangs' in dirnames and
+            'crashes' in dirnames and 'fuzzer_setup' in filenames)
+
+
 def collect_files(input_paths):
     paths = []
     for s in input_paths:
@@ -444,14 +449,12 @@ def collect_files(input_paths):
     with tqdm(desc='search', unit=' files') as pbar:
         for path in paths:
             for root, dirnames, filenames in os.walk(path, followlinks=True):
-                if not args.crash_only and 'queue' in dirnames:
-                    # modify in-place
-                    dirnames[:] = ['queue']
-                    continue
-
                 for dirname in dirnames:
                     if dirname.startswith('.'):
                         dirnames.remove(dirname)
+
+                if not args.crash_only and is_afl_dir(dirnames, filenames):
+                    continue
 
                 for filename in filenames:
                     if filename.startswith('.'):
