@@ -303,7 +303,7 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
                 trace_file = os.path.join(output_path, basename)
                 with open(trace_file, 'r') as f:
                     values = list(map(int, f))
-                crashed = False
+                crashed = len(values) == 0
                 os.unlink(trace_file)
             except FileNotFoundError:
                 a = None
@@ -584,7 +584,7 @@ def main():
             crash_files, hashmap = dedup(crash_files)
 
         for crash_path in crash_files:
-            fn = base64.b16encode(hashmap[crash_path]).lower()
+            fn = base64.b16encode(hashmap[crash_path]).decode('utf8').lower()
             output_path = os.path.join(args.crash_dir, fn)
             try:
                 os.link(crash_path, output_path)
