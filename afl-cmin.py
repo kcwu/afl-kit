@@ -426,6 +426,7 @@ def dedup(files):
         for i, h in enumerate(tqdm(pool.imap(hash_file, files, chunksize),
                                    desc='dedup',
                                    total=len(files),
+                                   ncols=0,
                                    leave=(len(files) > 100000))):
             if h in seen_hash:
                 continue
@@ -446,7 +447,7 @@ def collect_files(input_paths):
         paths += glob.glob(s)
 
     files = []
-    with tqdm(desc='search', unit=' files') as pbar:
+    with tqdm(desc='search', unit=' files', ncols=0) as pbar:
         for path in paths:
             for root, dirnames, filenames in os.walk(path, followlinks=True):
                 for dirname in dirnames:
@@ -525,7 +526,7 @@ def main():
     logger.info('Processing traces')
     effective = 0
     trace_info = {}
-    for _ in tqdm(files):
+    for _ in tqdm(files, ncols=0, smoothing=0.01):
         r = progress_queue.get()
         if r is not None:
             idx, worker_idx, pos, tuple_count = r
@@ -537,7 +538,7 @@ def main():
     ms = []
     crashes = []
     counter = collections.Counter()
-    for _ in tqdm(range(args.workers)):
+    for _ in tqdm(range(args.workers), ncols=0):
         idx, m, c, crs = result_queue.get()
         ms.append(m)
         counter.update(c)
@@ -604,7 +605,7 @@ def main():
         result = result_queue.get()
         already_have.update(result)
 
-    for t, c in tqdm(list(reversed(all_unique))):
+    for t, c in tqdm(list(reversed(all_unique)), ncols=0):
         if t in already_have:
             continue
 
