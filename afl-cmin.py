@@ -391,6 +391,24 @@ class Worker(multiprocessing.Process):
         self.r_out.put((self.idx, m, counter, crashes))
 
 
+class CombineTraceWorker(multiprocessing.Process):
+    def __init__(self, pack_name, jobs, r_out):
+        super().__init__()
+        self.pack_name = pack_name
+        self.jobs = jobs
+        self.r_out = r_out
+
+    def run(self):
+        already_have = set()
+        with open(self.pack_name, 'rb') as f:
+            for pos, tuple_count in self.jobs:
+                f.seek(pos)
+                result = array.array(tuple_index_type_code)
+                result.fromfile(f, tuple_count)
+                already_have.update(result)
+        self.r_out.put(already_have)
+
+
 def hash_file(path):
     m = hashlib.sha1()
     with open(path, 'rb') as f:
@@ -537,17 +555,7 @@ def main():
     already_have = set()
     count = 0
 
-    trace_packs = []
-    for i in range(args.workers):
-        pack_name = os.path.join(args.output, '.traces', f'{i}.pack')
-        trace_f = open(pack_name, 'rb')
-        trace_packs.append(trace_f)
-
-    for t, c in tqdm(list(reversed(all_unique))):
-        if t in already_have:
-            continue
-
-        idx = best_idxes[t]
+    def save_file(idx):
         input_path = files[idx]
         fn = (base64.b16encode(hashmap[input_path]).decode('utf8').lower()
               if not args.no_dedup else os.path.basename(input_path))
@@ -562,6 +570,45 @@ def main():
         except OSError:
             shutil.copy(input_path, output_path)
 
+    jobs = [[] for i in range(args.workers)]
+    saved = set()
+    for t, c in all_unique:
+        if c != 1:
+            continue
+        idx = best_idxes[t]
+        if idx in saved:
+            continue
+        save_file(idx)
+        saved.add(idx)
+        count += 1
+
+        worker_idx, pos, tuple_count = trace_info[idx]
+        job = (pos, tuple_count)
+        jobs[worker_idx].append(job)
+
+    trace_packs = []
+    workers = []
+    for i in range(args.workers):
+        pack_name = os.path.join(args.output, '.traces', f'{i}.pack')
+        trace_f = open(pack_name, 'rb')
+        trace_packs.append(trace_f)
+
+        p = CombineTraceWorker(pack_name, jobs[i], result_queue)
+        p.start()
+        workers.append(p)
+
+    for _ in range(args.workers):
+        result = result_queue.get()
+        already_have.update(result)
+
+    for t, c in tqdm(list(reversed(all_unique))):
+        if t in already_have:
+            continue
+
+        idx = best_idxes[t]
+        save_file(idx)
+        count += 1
+
         worker_idx, pos, tuple_count = trace_info[idx]
         trace_pack = trace_packs[worker_idx]
         trace_pack.seek(pos)
@@ -569,7 +616,6 @@ def main():
         result.fromfile(trace_pack, tuple_count)
 
         already_have.update(result)
-        count += 1
 
     for f in trace_packs:
         f.close()
