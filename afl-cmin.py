@@ -302,8 +302,7 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
             try:
                 trace_file = os.path.join(output_path, basename)
                 with open(trace_file, 'r') as f:
-                    for line in f:
-                        values.append(int(line))
+                    values = list(map(int, f))
                 crashed = False
                 os.unlink(trace_file)
             except FileNotFoundError:
