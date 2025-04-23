@@ -420,7 +420,7 @@ def dedup(files):
     with multiprocessing.Pool(args.workers) as pool:
         seen_hash = set()
         result = []
-        hashmap = {}
+        hash_list = []
         # use large chunksize to reduce multiprocessing overhead
         chunksize = max(1, min(256, len(files) // args.workers))
         for i, h in enumerate(tqdm(pool.imap(hash_file, files, chunksize),
@@ -432,8 +432,8 @@ def dedup(files):
                 continue
             seen_hash.add(h)
             result.append(files[i])
-            hashmap[files[i]] = h
-        return result, hashmap
+            hash_list.append(h)
+        return result, hash_list
 
 
 def is_afl_dir(dirnames, filenames):
@@ -476,7 +476,7 @@ def main():
                 len(args.input))
 
     if not args.no_dedup:
-        files, hashmap = dedup(files)
+        files, hash_list = dedup(files)
         logger.info('Remain %d files after dedup', len(files))
     else:
         logger.info('Skipping file deduplication.')
@@ -485,7 +485,12 @@ def main():
     file_index_type_code = detect_type_code(len(files))
 
     logger.info('Sorting files.')
-    files = sorted(files, key=os.path.getsize)
+    with multiprocessing.Pool(args.workers) as pool:
+        chunksize = max(1, min(512, len(files) // args.workers))
+        size_list = list(pool.map(os.path.getsize, files, chunksize))
+    idxes = sorted(range(len(files)), key=lambda x: size_list[x])
+    files = [files[idx] for idx in idxes]
+    hash_list = [hash_list[idx] for idx in idxes]
 
     afl_map_size = None
     if b'AFL_DUMP_MAP_SIZE' in open(args.exe, 'rb').read():
@@ -561,7 +566,7 @@ def main():
 
     def save_file(idx):
         input_path = files[idx]
-        fn = (base64.b16encode(hashmap[input_path]).decode('utf8').lower()
+        fn = (base64.b16encode(hash_list[idx]).decode('utf8').lower()
               if not args.no_dedup else os.path.basename(input_path))
         if args.as_queue:
             if args.no_dedup:
@@ -631,10 +636,10 @@ def main():
         if args.no_dedup:
             # Unless we deduped previously, we have to dedup the crash files
             # now.
-            crash_files, hashmap = dedup(crash_files)
+            crash_files, hash_list = dedup(crash_files)
 
-        for crash_path in crash_files:
-            fn = base64.b16encode(hashmap[crash_path]).decode('utf8').lower()
+        for idx, crash_path in enumerate(crash_files):
+            fn = base64.b16encode(hash_list[idx]).decode('utf8').lower()
             output_path = os.path.join(args.crash_dir, fn)
             try:
                 os.link(crash_path, output_path)
