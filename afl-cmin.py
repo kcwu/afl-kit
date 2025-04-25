@@ -241,11 +241,12 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
     if args.stdin_file:
         assert args.workers == 1
         input_from_file = True
-        cmd += ['-H', args.stdin_file]
+        stdin_file = args.stdin_file
+        cmd += ['-H', stdin_file]
     elif found_atat:
         input_from_file = True
-        at_file = os.path.join(args.output, f'.input.{os.getpid()}')
-        cmd += ['-H', at_file]
+        stdin_file = os.path.join(args.output, f'.input.{os.getpid()}')
+        cmd += ['-H', stdin_file]
     else:
         input_from_file = False
 
@@ -259,6 +260,8 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
         output_path = os.path.join(args.output, f'.showmap.{os.getpid()}')
         cmd += ['-o', output_path]
     else:
+        if input_from_file:
+            shutil.copy(input_path, stdin_file)
         cmd += ['-o', '-']
     env = os.environ.copy()
 
