@@ -155,9 +155,6 @@ def init():
         logger.error('-f is only supported with one worker (-T 1)')
         sys.exit(1)
 
-    if args.crash_only:
-        os.environ['AFL_CMIN_CRASHES_ONLY'] = '1'
-
     if args.memory_limit != 'none' and args.memory_limit < 10:
         logger.error('dangerously low memory limit')
         sys.exit(1)
@@ -263,7 +260,6 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
         if input_from_file:
             shutil.copy(input_path, stdin_file)
         cmd += ['-o', '-']
-    env = os.environ.copy()
 
     if args.frida_mode:
         cmd += ['-O']
@@ -277,11 +273,16 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
         cmd += ['-e']
     cmd += ['--', args.exe] + args.args
 
+    env = os.environ.copy()
+    env['AFL_QUIET'] = '1'
+    env['ASAN_OPTIONS'] = 'detect_leaks=0'
     if first:
         logger.debug('run command line: %s', subprocess.list2cmdline(cmd))
         env['AFL_CMIN_ALLOW_ANY'] = '1'
     if afl_map_size:
         env['AFL_MAP_SIZE'] = str(afl_map_size)
+    if args.crash_only:
+        env['AFL_CMIN_CRASHES_ONLY'] = '1'
 
     if input_from_file:
         p = subprocess.Popen(cmd,
