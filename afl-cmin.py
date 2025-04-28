@@ -159,7 +159,7 @@ def init():
         logger.error('-f is only supported with one worker (-T 1)')
         sys.exit(1)
 
-    if args.memory_limit != 'none' and args.memory_limit < 10:
+    if args.memory_limit != 'none' and args.memory_limit < 5:
         logger.error('dangerously low memory limit')
         sys.exit(1)
 
