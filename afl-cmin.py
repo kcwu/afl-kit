@@ -110,6 +110,10 @@ group.add_argument('--crash-dir',
                    metavar='dir',
                    default=None,
                    help="move crashes to a separate dir, always deduplicated")
+group.add_argument('-A',
+                   dest='allow_any',
+                   action='store_true',
+                   help='allow crashes and timeouts (not recommended)')
 group.add_argument('-C',
                    dest='crash_only',
                    action='store_true',
@@ -283,6 +287,8 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
         env['AFL_MAP_SIZE'] = str(afl_map_size)
     if args.crash_only:
         env['AFL_CMIN_CRASHES_ONLY'] = '1'
+    if args.allow_any:
+        env['AFL_CMIN_ALLOW_ANY'] = '1'
 
     if input_from_file:
         p = subprocess.Popen(cmd,
