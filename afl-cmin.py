@@ -322,6 +322,7 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
             a = array.array(tuple_index_type_code, values)
             result.append((idx, a, crashed))
         os.unlink(filelist)
+        os.rmdir(output_path)
         return result
     else:
         values = []
@@ -332,6 +333,8 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
         values = [(t // 1000) * 9 + t % 1000 for t in values]
         a = array.array(tuple_index_type_code, values)
         crashed = p.returncode in [2, 3]
+        if input_from_file and stdin_file != args.stdin_file:
+            os.unlink(stdin_file)
         return a, crashed
 
 
