@@ -19,13 +19,13 @@ import base64
 import collections
 import glob
 import hashlib
+import itertools
 import logging
 import multiprocessing
 import os
 import shutil
 import subprocess
 import sys
-import itertools
 
 try:
     from tqdm import tqdm
@@ -33,6 +33,7 @@ except ImportError:
     print('Hint: install python module "tqdm" to show progress bar')
 
     class tqdm:
+
         def __init__(self, data=None, *args, **argd):
             self.data = data
 
@@ -171,8 +172,8 @@ def init():
         logger.error('binary "%s" not found or not regular file', args.exe)
         sys.exit(1)
 
-    if not os.environ.get('AFL_SKIP_BIN_CHECK') and not any([
-        args.qemu_mode, args.frida_mode, args.unicorn_mode, args.nyx_mode]):
+    if not os.environ.get('AFL_SKIP_BIN_CHECK') and not any(
+        [args.qemu_mode, args.frida_mode, args.unicorn_mode, args.nyx_mode]):
         if b'__AFL_SHM_ID' not in open(args.exe, 'rb').read():
             logger.error("binary '%s' doesn't appear to be instrumented",
                          args.exe)
@@ -339,6 +340,7 @@ def afl_showmap(input_path=None, batch=None, afl_map_size=None, first=False):
 
 
 class JobDispatcher(multiprocessing.Process):
+
     def __init__(self, job_queue, jobs):
         super().__init__()
         self.job_queue = job_queue
@@ -351,6 +353,7 @@ class JobDispatcher(multiprocessing.Process):
 
 
 class Worker(multiprocessing.Process):
+
     def __init__(self, idx, afl_map_size, q_in, p_out, r_out):
         super().__init__()
         self.idx = idx
@@ -375,7 +378,8 @@ class Worker(multiprocessing.Process):
                 if batch is None:
                     break
 
-                for idx, r, crash in afl_showmap(batch=batch, afl_map_size=self.afl_map_size):
+                for idx, r, crash in afl_showmap(
+                        batch=batch, afl_map_size=self.afl_map_size):
                     counter.update(r)
 
                     used = False
@@ -405,6 +409,7 @@ class Worker(multiprocessing.Process):
 
 
 class CombineTraceWorker(multiprocessing.Process):
+
     def __init__(self, pack_name, jobs, r_out):
         super().__init__()
         self.pack_name = pack_name
@@ -436,11 +441,12 @@ def dedup(files):
         hash_list = []
         # use large chunksize to reduce multiprocessing overhead
         chunksize = max(1, min(256, len(files) // args.workers))
-        for i, h in enumerate(tqdm(pool.imap(hash_file, files, chunksize),
-                                   desc='dedup',
-                                   total=len(files),
-                                   ncols=0,
-                                   leave=(len(files) > 100000))):
+        for i, h in enumerate(
+                tqdm(pool.imap(hash_file, files, chunksize),
+                     desc='dedup',
+                     total=len(files),
+                     ncols=0,
+                     leave=(len(files) > 100000))):
             if h in seen_hash:
                 continue
             seen_hash.add(h)
@@ -450,8 +456,8 @@ def dedup(files):
 
 
 def is_afl_dir(dirnames, filenames):
-    return ('queue' in dirnames and 'hangs' in dirnames and
-            'crashes' in dirnames and 'fuzzer_setup' in filenames)
+    return ('queue' in dirnames and 'hangs' in dirnames
+            and 'crashes' in dirnames and 'fuzzer_setup' in filenames)
 
 
 def collect_files(input_paths):
@@ -509,7 +515,9 @@ def main():
     if b'AFL_DUMP_MAP_SIZE' in open(args.exe, 'rb').read():
         output = subprocess.run([args.exe],
                                 capture_output=True,
-                                env={'AFL_DUMP_MAP_SIZE': '1'}).stdout
+                                env={
+                                    'AFL_DUMP_MAP_SIZE': '1'
+                                }).stdout
         afl_map_size = int(output)
         logger.info('Setting AFL_MAP_SIZE=%d', afl_map_size)
 
